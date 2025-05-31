@@ -36,6 +36,9 @@ class PlannerAgent(Agent):
                                 model_provider=provider.get_model_name())
         self.logger = Logger("planner_agent.log")
         self.current_plan = []
+        self.plan_cache: Dict[str, list] = {}
+        self.subtask_status: Dict[str, str] = {}
+        self.final_report_path: str | None = None
     
     def get_task_names(self, text: str) -> List[str]:
         """
@@ -264,33 +267,48 @@ class PlannerAgent(Agent):
         final_summary = []
 
         self.status_message = "Making a plan..."
-        agents_tasks = await self.make_plan(goal)
+        if goal in self.plan_cache:
+            agents_tasks = self.plan_cache[goal]
+        else:
+            agents_tasks = await self.make_plan(goal)
+            self.plan_cache[goal] = agents_tasks
+        self.current_plan = [
+            {
+                "task": name,
+                "tool": details["agent"],
+                "subtasks": [details["task"]]
+            }
+            for name, details in agents_tasks
+        ]
+        self.subtask_status = {f"{i}-0": "pending" for i in range(len(self.current_plan))}
 
         if agents_tasks == []:
             return "Failed to parse the tasks.", ""
 
         i = 0
-        steps = len(agents_tasks)
+        steps = len(self.current_plan)
         while i < steps and not self.stop:
-            task_name, task = agents_tasks[i][0], agents_tasks[i][1]
+            task = self.current_plan[i]
+            task_name = task['task']
             self.status_message = "Starting agents..."
             pretty_print(f"I will {task_name}.", color="info")
             self.last_answer = f"I will {task_name.lower()}."
-            pretty_print(f"Assigned agent {task['agent']} to {task_name}", color="info")
-            if speech_module: speech_module.speak(f"I will {task_name}. I assigned the {task['agent']} agent to the task.")
+            if speech_module:
+                speech_module.speak(f"I will {task_name}. I assigned the {task['tool']} agent to the task.")
 
-            if agents_work_result is not None:
-                required_infos = self.get_work_result_agent(task['need'], agents_work_result)
-            try:
-                answer, success = await self.start_agent_process(task, required_infos)
-                final_summary.append(f"Task {i+1}: {task_name}\nResult: {answer}\n")
-            except Exception as e:
-                raise e
-            if self.stop:
-                pretty_print(f"Requested stop.", color="failure")
-            agents_work_result[task['id']] = answer
-            agents_tasks = await self.update_plan(goal, agents_tasks, agents_work_result, task['id'], success)
-            steps = len(agents_tasks)
+            agent = self.agents[task['tool'].lower()]
+            for s_idx, sub in enumerate(task['subtasks']):
+                key = f"{i}-{s_idx}"
+                if agents_work_result is not None:
+                    required_infos = self.get_work_result_agent([], agents_work_result)
+                try:
+                    answer, success = await agent.process(sub, None)
+                    final_summary.append(f"Task {i+1}: {sub}\nResult: {answer}\n")
+                except Exception as e:
+                    success = False
+                    answer = str(e)
+                self.subtask_status[key] = "success" if success else "failed"
+                agents_work_result[key] = answer
             i += 1
 
         # Generate final comprehensive summary
@@ -298,6 +316,11 @@ class PlannerAgent(Agent):
         summary += "\n".join(final_summary)
         summary += f"\n\nOverall Goal: {goal}\n"
         summary += "=== End of Summary ===\n"
+
+        from .report_agent import ReportAgent
+        report = ReportAgent("report", "prompts/base/casual_agent.txt", self.llm, verbose=False)
+        await report.process(summary, None)
+        self.final_report_path = report.report_path
 
         return summary, ""
 
@@ -307,13 +330,4 @@ class PlannerAgent(Agent):
         Returns:
             List[dict]: The current plan with task details.
         """
-        formatted_plan = []
-        for task_name, task_details in self.current_plan:
-            formatted_task = {
-                "task_name": task_name,
-                "agent": task_details['agent'],
-                "description": task_details['task'],
-                "requirements": task_details.get('need', '')
-            }
-            formatted_plan.append(formatted_task)
-        return formatted_plan
+        return self.current_plan

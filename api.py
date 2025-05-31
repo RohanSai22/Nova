@@ -141,6 +141,7 @@ async def get_latest_answer():
         return JSONResponse(status_code=404, content={"error": "No agent available"})
     uid = str(uuid.uuid4())
     if not any(q["answer"] == interaction.current_agent.last_answer for q in query_resp_history):
+        planner = interaction.current_agent if isinstance(interaction.current_agent, PlannerAgent) else None
         query_resp = {
             "done": "false",
             "answer": interaction.current_agent.last_answer,
@@ -149,6 +150,9 @@ async def get_latest_answer():
             "success": interaction.current_agent.success,
             "blocks": {f'{i}': block.jsonify() for i, block in enumerate(interaction.get_last_blocks_result())} if interaction.current_agent else {},
             "status": interaction.current_agent.get_status_message if interaction.current_agent else "No status available",
+            "plan": planner.get_current_plan() if planner else [],
+            "subtask_status": planner.subtask_status if planner else {},
+            "final_report_url": planner.final_report_path if planner else None,
             "uid": uid
         }
         interaction.current_agent.last_answer = ""

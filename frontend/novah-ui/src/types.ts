@@ -20,3 +20,11 @@ export interface Thread {
   messages: Message[];
   blocks: ToolOutput[] | null;
 }
+
+export interface PlanItem {
+  task: string;
+  tool: string;
+  subtasks: string[];
+}
+
+export type SubtaskStatus = Record<string, 'pending' | 'success' | 'failed'>;

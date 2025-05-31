@@ -1,17 +1,23 @@
 import { motion } from 'framer-motion';
+import { FileSearch, Globe, Code } from 'lucide-react';
 
-const suggestions = ['Find docs', 'Search the web', 'Write code'];
+const suggestions = [
+  { icon: FileSearch, label: 'Files' },
+  { icon: Globe, label: 'Web' },
+  { icon: Code, label: 'Code' }
+];
 
 export default function SuggestionCards() {
   return (
     <div className="flex gap-4 mt-6 justify-center">
-      {suggestions.map(text => (
+      {suggestions.map(({ icon: Icon, label }) => (
         <motion.div
-          key={text}
+          key={label}
           whileHover={{ scale: 1.05 }}
-          className="bg-white/10 rounded-xl px-4 py-2 backdrop-blur cursor-pointer"
+          className="bg-white/10 rounded-xl p-4 backdrop-blur cursor-pointer flex flex-col items-center"
         >
-          {text}
+          <Icon className="w-6 h-6" />
+          <span className="text-sm mt-1">{label}</span>
         </motion.div>
       ))}
     </div>
